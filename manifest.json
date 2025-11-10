@@ -1,11 +1,11 @@
 {
-  "name": "Snake Game",
+  "name": "Snake Fullscreen Menu",
   "short_name": "Snake",
-  "description": "Классическая змейка в браузере",
-  "start_url": "index.html",
+  "description": "Классическая змейка с меню и звуком.",
+  "start_url": "/index.html",
   "display": "standalone",
   "background_color": "#b8d30b",
-  "theme_color": "#111111",
+  "theme_color": "#222222",
   "icons": [
     {
       "src": "snake.png",
