@@ -1,12 +1,12 @@
 const CACHE_NAME = 'snake-cache-v1';
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/music/menu.mp3',
-  '/sounds/apple.wav',
-  '/sw.js'
-  // Если будут новые изображения, иконки или джойстик css — добавьте сюда!
+  './',                 // index.html
+  './index.html',
+  './music/menu.mp3',
+  './sounds/apple.wav',
+  './sw.js'
 ];
+
 
 // Установка SW
 self.addEventListener('install', event => {
