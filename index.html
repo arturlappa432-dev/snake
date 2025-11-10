@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Змейка Fullscreen Menu Snakes</title>
+<link rel="manifest" href="manifest.json">
+<style>
+body {
+  margin:0;
+  overflow:hidden;
+  font-family:'Courier New', monospace;
+  background:#b8d30b;
+}
+#gameContainer {
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  height:100vh;
+}
+canvas {
+  display:block;
+  image-rendering:pixelated;
+  background:#b8d30b;
+}
+#hud {
+  color:#111;
+  font-size:20px;
+  font-family:'Arial', sans-serif;
+  font-weight:bold;
+  z-index:5;
+  display:none;
+  margin-bottom:12px;
+}
+#pauseBtn {
+  font-size:18px;
+  padding:8px 16px;
+  display:none;
+  cursor:pointer;
+  border:none;
+  border-radius:6px;
+  background:#222;
+  color:#b8d30b;
+  margin-top:12px;
+  z-index:5;
+}
+#pauseOverlay {
+  position:fixed;
+  top:0;
+  left:0;
+  width:100%;
+  height:100%;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  color:#b8d30b;
+  font-size:36px;
+  text-align:center;
+  flex-direction:column;
+  display:none;
+  pointer-events:none;
+  z-index:100;
+  background:rgba(0,0,0,0.5);
+}
+#menu, #gameOverMenu {
+  position:fixed;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  z-index:101;
+}
+.menuButtons {
+  background: rgba(0,0,0,0.6);
+  padding:20px;
+  border-radius:8px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+}
+button {
+  font-family:'Courier New', monospace;
+  background:#222;
+  color:#b8d30b;
+  border:none;
+  padding:10px 20px;
+  margin:5px;
+  cursor:pointer;
+  border-radius:6px;
+  font-size:18px;
+}
+button:hover { background:#333; }
+</style>
+</head>
+<body>
+<div id="gameContainer">
+  <div id="hud">Счёт: <span id="score">0</span> | Рекорд: <span id="best">0</span></div>
+  <canvas id="menuSnakes"></canvas>
+  <canvas id="game" style="display:none;"></canvas>
+  <button id="pauseBtn">⏸</button>
+  <div id="pauseOverlay">Пауза</div>
+</div>
+
+<div id="menu">
+  <div class="menuButtons">
+    <h1>🐍 Змейка</h1>
+    <button id="startBtn">Старт</button>
+    <button id="settingsBtn">Настройки</button>
+    <button id="exitBtn">Выход</button>
+    <p style="font-size:12px;color:#b8d30b">by m1kmas</p>
+  </div>
+</div>
+
+<div id="gameOverMenu" style="display:none;">
+  <div class="menuButtons">
+    <h1>GAME OVER</h1>
+    <button id="restartBtn">Рестарт</button>
+    <button id="mainMenuBtn">Главное меню</button>
+  </div>
+</div>
+
+<script>
+const gameCanvas = document.getElementById('game');
+const ctx = gameCanvas.getContext('2d');
+const menuCanvas = document.getElementById('menuSnakes');
+const menuCtx = menuCanvas.getContext('2d');
+
+const hud = document.getElementById('hud');
+const scoreEl = document.getElementById('score');
+const bestEl = document.getElementById('best');
+const pauseBtn = document.getElementById('pauseBtn');
+const pauseOverlay = document.getElementById('pauseOverlay');
+const menuDiv = document.getElementById('menu');
+const gameOverMenu = document.getElementById('gameOverMenu');
+const startBtn = document.getElementById('startBtn');
+const restartBtn = document.getElementById('restartBtn');
+const mainMenuBtn = document.getElementById('mainMenuBtn');
+const settingsBtn = document.getElementById('settingsBtn');
+const exitBtn = document.getElementById('exitBtn');
+
+let snake, apple, dir, nextDir, running, score, best, loopId;
+let paused = false;
+const cell = 16;
+const cols = 26;
+const rows = 21;
+best = parseInt(localStorage.getItem('bestSnake') || 0);
+bestEl.textContent = best;
+
+// ---------- Звуки ----------
+const appleSound = new Audio('https://raw.githubusercontent.com/arturlappa432-dev/snake/main/sounds/apple.wav');
+appleSound.volume = 0.5;
+
+const menuMusic = new Audio('https://raw.githubusercontent.com/arturlappa432-dev/snake/main/music/menu.mp3');
+menuMusic.loop = true;
+menuMusic.volume = 0.2;
+
+// ---------- Canvas ----------
+function resizeGameCanvas() {
+  gameCanvas.width = cols * cell;
+  gameCanvas.height = rows * cell;
+  gameCanvas.style.border = '4px solid #111';
+  gameCanvas.style.borderRadius = '8px';
+}
+resizeGameCanvas();
+
+// ---------- Игра ----------
+function reset(){
+  snake = [{x:5,y:10},{x:4,y:10},{x:3,y:10}];
+  dir = {x:1,y:0}; nextDir = {x:1,y:0};
+  score = 0; scoreEl.textContent=score;
+  placeApple(); running=true;
+  paused=false;
+  pauseBtn.textContent='⏸';
+  pauseBtn.style.display='block';
+  pauseOverlay.style.display='none';
+  gameCanvas.style.display='block';
+  hud.style.display='block';
+  clearTimeout(menuTimerId); // останавливаем таймер меню
+  menuMusic.pause(); // музыка выключена
+  loopId = setInterval(update,170);
+}
+
+function placeApple(){
+  apple = {x:Math.floor(Math.random()*cols),y:Math.floor(Math.random()*rows)};
+  if(snake.some(s=>s.x===apple.x&&s.y===apple.y)) placeApple();
+}
+
+function update(){
+  if(paused) return;
+  dir=nextDir;
+  const head = {x:snake[0].x+dir.x, y:snake[0].y+dir.y};
+  if(head.x<0||head.x>=cols||head.y<0||head.y>=rows||snake.some(s=>s.x===head.x&&s.y===head.y)){
+    gameOver(); return;
+  }
+  snake.unshift(head);
+  if(head.x===apple.x&&head.y===apple.y){
+    score++; 
+    scoreEl.textContent=score; 
+    placeApple(); 
+    appleSound.currentTime = 0;
+    appleSound.play();
+  } else snake.pop();
+  draw();
+}
+
+function draw(){
+  ctx.fillStyle='#b8d30b';
+  ctx.fillRect(0,0,gameCanvas.width,gameCanvas.height);
+  ctx.strokeStyle='#111';
+  ctx.lineWidth=4;
+  ctx.strokeRect(0,0,gameCanvas.width,gameCanvas.height);
+
+  ctx.fillStyle='#222';
+  snake.forEach(s=>ctx.fillRect(s.x*cell, s.y*cell, cell-1, cell-1));
+
+  ctx.fillStyle='#fff';
+  const head = snake[0];
+  ctx.fillRect(head.x*cell+2, head.y*cell+2, 4,4);
+  ctx.fillRect(head.x*cell+cell-6, head.y*cell+2, 4,4);
+
+  ctx.fillStyle='#000';
+  ctx.fillRect(apple.x*cell, apple.y*cell, cell-1, cell-1);
+}
+
+function gameOver(){
+  clearInterval(loopId); running=false;
+  if(score>best){best=score; localStorage.setItem('bestSnake',best); bestEl.textContent=best;}
+  pauseBtn.style.display='none';
+  hud.style.display='none';
+  gameCanvas.style.display='none';
+  pauseOverlay.style.display='none';
+  gameOverMenu.style.display='flex';
+  startMenuSnakesAnimationWithoutMusic(); // только анимация змей
+}
+
+// ---------- Кнопки ----------
+startBtn.onclick = ()=>{
+  menuDiv.style.display='none';
+  menuCanvas.style.display='none';
+  reset();
+};
+restartBtn.onclick = ()=>{ 
+  gameOverMenu.style.display='none'; 
+  reset(); 
+};
+mainMenuBtn.onclick = ()=>{ 
+  gameOverMenu.style.display='none'; 
+  startMainMenu(); 
+};
+settingsBtn.onclick = ()=>alert('Настройки пока в разработке');
+exitBtn.onclick = ()=>window.close();
+
+window.addEventListener('keydown', e=>{
+  if(e.key==='ArrowUp'&&dir.y!==1) nextDir={x:0,y:-1};
+  if(e.key==='ArrowDown'&&dir.y!==-1) nextDir={x:0,y:1};
+  if(e.key==='ArrowLeft'&&dir.x!==1) nextDir={x:-1,y:0};
+  if(e.key==='ArrowRight'&&dir.x!==-1) nextDir={x:1,y:0};
+});
+
+// ---------- Пауза ----------
+pauseBtn.onclick = ()=>{
+  if(!paused){
+    paused=true;
+    pauseBtn.textContent='▶';
+    pauseOverlay.innerHTML='Пауза';
+    pauseOverlay.style.display='flex';
+  } else {
+    let countdown = 3;
+    pauseOverlay.innerHTML = countdown;
+    const timer = setInterval(()=>{
+      countdown--;
+      if(countdown>0) pauseOverlay.innerHTML=countdown;
+      else { 
+        clearInterval(timer); 
+        paused=false; 
+        pauseOverlay.style.display='none'; 
+        pauseBtn.textContent='⏸';
+      }
+    },1000);
+  }
+};
+
+// ---------- Змейки в меню ----------
+menuCanvas.width = window.innerWidth;
+menuCanvas.height = window.innerHeight;
+const menuCell = 16;
+let menuCols = Math.floor(menuCanvas.width/menuCell);
+let menuRows = Math.floor(menuCanvas.height/menuCell);
+let menuSnakes = [];
+let menuTimerId = null;
+
+function randomDir(){ 
+  const dirs=[{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}]; 
+  return dirs[Math.floor(Math.random()*dirs.length)]; 
+}
+function randomPosition(length){
+  return {x:Math.floor(Math.random()*(menuCols-length)),y:Math.floor(Math.random()*(menuRows-length))};
+}
+function collidesWithOthers(segments){
+  return menuSnakes.some(snake=>snake.segments.some(seg=>segments.some(ns=>ns.x===seg.x&&ns.y===seg.y)));
+}
+function createMenuSnake(){
+  const length=Math.floor(Math.random()*5)+3;
+  const dir=randomDir();
+  let pos=randomPosition(length);
+  let segments=[];
+  for(let i=0;i<length;i++) segments.push({x: pos.x-i*dir.x, y: pos.y-i*dir.y});
+  let tries=0;
+  while(collidesWithOthers(segments)&&tries<50){
+    pos=randomPosition(length);
+    segments=[];
+    for(let i=0;i<length;i++) segments.push({x: pos.x-i*dir.x, y: pos.y-i*dir.y});
+    tries++;
+  }
+  menuSnakes.push({segments, dir});
+}
+function drawMenuSnakes(){
+  menuCtx.clearRect(0,0,menuCanvas.width,menuCanvas.height);
+  menuSnakes.forEach(snake=>{
+    menuCtx.fillStyle='#222';
+    snake.segments.forEach(seg=>menuCtx.fillRect(seg.x*menuCell, seg.y*menuCell, menuCell-1, menuCell-1));
+    const head=snake.segments[0];
+    menuCtx.fillStyle='#fff';
+    menuCtx.fillRect(head.x*menuCell+2, head.y*menuCell+2, 4,4);
+    menuCtx.fillRect(head.x*menuCell+menuCell-6, head.y*menuCell+2, 4,4);
+
+    if(Math.random()<0.1){
+      const newDir=randomDir();
+      if(newDir.x!==-snake.dir.x||newDir.y!==-snake.dir.y) snake.dir=newDir;
+    }
+    const newHead={x:head.x+snake.dir.x, y:head.y+snake.dir.y};
+    snake.segments.unshift(newHead);
+    snake.segments.pop();
+    snake.segments.forEach(seg=>{
+      if(seg.x<0) seg.x=menuCols-1;
+      if(seg.x>=menuCols) seg.x=0;
+      if(seg.y<0) seg.y=menuRows-1;
+      if(seg.y>=menuRows) seg.y=0;
+    });
+  });
+  menuTimerId = setTimeout(drawMenuSnakes, 120);
+}
+
+// ----- Функции для главного меню -----
+function startMenuSnakesAnimation(){
+  if(menuTimerId) clearTimeout(menuTimerId);
+  menuSnakes = [];
+  for(let i=0;i<4;i++) createMenuSnake();
+  drawMenuSnakes();
+  menuMusic.currentTime = 0;
+  menuMusic.play();
+}
+
+function startMenuSnakesAnimationWithoutMusic(){
+  if(menuTimerId) clearTimeout(menuTimerId);
+  menuSnakes = [];
+  for(let i=0;i<4;i++) createMenuSnake();
+  drawMenuSnakes();
+}
+
+function startMainMenu(){
+  menuDiv.style.display='flex';
+  menuCanvas.style.display='block';
+  startMenuSnakesAnimation(); // музыка + анимация
+}
+
+// ----- Resize -----
+window.addEventListener('resize', ()=>{
+  menuCanvas.width = window.innerWidth;
+  menuCanvas.height = window.innerHeight;
+  menuCols = Math.floor(menuCanvas.width/menuCell);
+  menuRows = Math.floor(menuCanvas.height/menuCell);
+});
+
+// ----- Старт главного меню -----
+startMainMenu();
+
+// ----- Service Worker -----
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js')
+    .then(() => console.log('Service Worker зарегистрирован!'))
+    .catch(err => console.error('Ошибка регистрации SW:', err));
+}
+</script>
+
+</body>
+</html>
